@@ -1,0 +1,17 @@
+{
+  "_readme": "Regex glossary for ASR artifacts in course captions. 'safe' patterns apply by default; 'risky' only with --risky (review output). Python re syntax; all applied case-insensitively unless 'case_sensitive': true. Seeded from the ZTM Claude Code Bootcamp — edit per course.",
+  "safe": [
+    {"pattern": "\\bcloud code\\b", "replacement": "Claude Code", "note": "the big one — ASR hears 'cloud code'"},
+    {"pattern": "\\bcloud design\\b", "replacement": "Claude Design"},
+    {"pattern": "\\bcloud desktop\\b", "replacement": "Claude Desktop"},
+    {"pattern": "\\bclod\\s*\\.\\s*ai\\b", "replacement": "claude.ai"},
+    {"pattern": "\\bcloud\\s*\\.\\s*ai\\b", "replacement": "claude.ai"},
+    {"pattern": "(\\w) -(\\w)", "replacement": "\\1-\\2", "note": "caption line-wrap: 'AI -assisted' -> 'AI-assisted'"},
+    {"pattern": "(\\w) \\.(\\w)", "replacement": "\\1.\\2", "note": "caption line-wrap: '3 a .m.' -> '3 a.m.'"}
+  ],
+  "risky": [
+    {"pattern": "\\bclod\\b", "replacement": "Claude", "note": "standalone 'clod' — near-always Claude in this course, but review"},
+    {"pattern": "\\bcloud project\\b", "replacement": "Claude Project", "note": "could legitimately mean a cloud project"},
+    {"pattern": "\\bcloud md\\b", "replacement": "CLAUDE.md", "note": "when the speaker names the memory file"}
+  ]
+}
