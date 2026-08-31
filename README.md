@@ -52,6 +52,14 @@ python tools/apply_corrections.py --dir transcripts --out transcripts-clean --wr
 
 Edit [corrections.json](corrections.json) to add course-specific fixes (e.g. this repo ships the "cloud code" → "Claude Code" glossary from the Claude Code Bootcamp).
 
+## Security notes
+
+- The receiver binds **127.0.0.1 only**, but it is deliberately CORS-open (any page in your browser can reach it while it runs, because the course page must POST to it). Consequences and mitigations:
+  - **Run it only during an extraction session**, stop it after.
+  - The worker refuses to hand yt-dlp any URL whose host isn't on the allowlist (default `.hotmart.com`; extend with `--allow-hosts` if your course uses a different CDN). Rejected jobs land as `queue/*.rejected`.
+  - Request bodies are capped at 5 MB; filenames are slugified (no path traversal).
+- Treat harvested URLs as secrets while valid: they're signed, short-lived stream tokens. They live only in `queue/*.json` (gitignored) and expire within minutes.
+
 ## Legal / intended use
 
 For **personal study aids of content you have legitimate access to**. Transcripts are internal reference material: do not republish course text, and write any derivative training/onboarding material in your own words, citing the course. Respect the platform's terms of service.

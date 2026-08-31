@@ -23,6 +23,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 REFERER = "https://player.hotmart.com/"
+# Only hand yt-dlp URLs from these hosts. The receiver is CORS-open on localhost by design,
+# so any web page could queue a job while it runs — this allowlist stops a drive-by page
+# from making this worker fetch arbitrary/internal URLs. Extend via --allow-hosts.
+DEFAULT_ALLOWED_HOST_SUFFIXES = [".hotmart.com"]
+
+
+def url_allowed(url: str, suffixes) -> bool:
+    from urllib.parse import urlparse
+    try:
+        p = urlparse(url)
+    except ValueError:
+        return False
+    if p.scheme != "https" or not p.hostname:
+        return False
+    host = p.hostname.lower()
+    return any(host == s.lstrip(".") or host.endswith(s) for s in suffixes)
 
 
 def clean_vtt(vtt_text: str) -> str:
@@ -42,7 +58,7 @@ def clean_vtt(vtt_text: str) -> str:
     return "\n".join(kept)
 
 
-def process(job_file: Path, out_dir: Path, sub_langs: str) -> str:
+def process(job_file: Path, out_dir: Path, sub_langs: str, allowed_suffixes) -> str:
     data = json.loads(job_file.read_text(encoding="utf-8"))
     name, master = data["name"], data["master"]
     slug = re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-").lower()[:120]
@@ -50,6 +66,9 @@ def process(job_file: Path, out_dir: Path, sub_langs: str) -> str:
     if out_md.exists():
         job_file.unlink()
         return f"skip (exists): {out_md.name}"
+    if not url_allowed(master, allowed_suffixes):
+        job_file.rename(job_file.with_suffix(".rejected"))
+        return f"REJECT {name}: master URL host not in allowlist ({','.join(allowed_suffixes)})"
 
     with tempfile.TemporaryDirectory() as td:
         base = Path(td) / "cap"
@@ -77,7 +96,10 @@ def main():
     ap.add_argument("--out", default="transcripts")
     ap.add_argument("--idle-exit", type=int, default=300, help="exit after this many idle seconds")
     ap.add_argument("--sub-langs", default="en.*,eng")
+    ap.add_argument("--allow-hosts", default=",".join(DEFAULT_ALLOWED_HOST_SUFFIXES),
+                    help="comma-separated host suffixes yt-dlp may fetch from")
     args = ap.parse_args()
+    allowed_suffixes = [s.strip().lower() for s in args.allow_hosts.split(",") if s.strip()]
     queue_dir = (ROOT / args.queue).resolve()
     out_dir = (ROOT / args.out).resolve()
     queue_dir.mkdir(parents=True, exist_ok=True)
@@ -94,7 +116,7 @@ def main():
         idle = 0.0
         for job in jobs:
             try:
-                print(process(job, out_dir, args.sub_langs), flush=True)
+                print(process(job, out_dir, args.sub_langs, allowed_suffixes), flush=True)
             except Exception as e:  # noqa: BLE001 - keep the watcher alive
                 print(f"ERROR {job.name}: {e}", flush=True)
                 job.rename(job.with_suffix(".failed"))

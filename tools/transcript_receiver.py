@@ -48,6 +48,8 @@ def make_handler(out_dir: Path, queue_dir: Path):
         def do_POST(self):
             try:
                 length = int(self.headers.get("Content-Length", 0))
+                if length > 5_000_000:  # sanity cap — largest real transcript is well under 1 MB
+                    raise ValueError("request body too large")
                 data = json.loads(self.rfile.read(length))
                 if self.path == "/urls":
                     queue_dir.mkdir(parents=True, exist_ok=True)
