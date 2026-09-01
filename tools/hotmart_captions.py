@@ -1,4 +1,4 @@
-"""Queue watcher: converts harvested Hotmart stream URLs into clean transcript markdown.
+﻿"""Queue watcher: converts harvested Hotmart stream URLs into clean transcript markdown.
 
 transcript_receiver.py's /urls endpoint drops {name, master, child} JSON files into the
 queue folder. This worker picks each up, uses yt-dlp to download the English subtitle
@@ -7,13 +7,14 @@ lines deduped), and writes <out>/<slug>.md.
 
 IMPORTANT: master-URL tokens (hdnts) expire ~8 minutes after the lecture page loaded, so
 run this DURING harvesting, not after. Jobs that fail (expired token, CDN refusal, empty
-captions) are shelved as *.failed so the queue drains — re-harvest those lectures fresh.
+captions) are shelved as *.failed so the queue drains -- re-harvest those lectures fresh.
 
 Usage:  python tools/hotmart_captions.py [--queue queue] [--out transcripts]
                                          [--idle-exit 300] [--sub-langs "en.*,eng"]
 """
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -24,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 REFERER = "https://player.hotmart.com/"
 # Only hand yt-dlp URLs from these hosts. The receiver is CORS-open on localhost by design,
-# so any web page could queue a job while it runs — this allowlist stops a drive-by page
+# so any web page could queue a job while it runs -- this allowlist stops a drive-by page
 # from making this worker fetch arbitrary/internal URLs. Extend via --allow-hosts.
 DEFAULT_ALLOWED_HOST_SUFFIXES = [".hotmart.com"]
 
@@ -67,7 +68,7 @@ def process(job_file: Path, out_dir: Path, sub_langs: str, allowed_suffixes) -> 
         job_file.unlink()
         return f"skip (exists): {out_md.name}"
     if not url_allowed(master, allowed_suffixes):
-        job_file.rename(job_file.with_suffix(".rejected"))
+        os.replace(job_file, job_file.with_suffix(".rejected"))
         return f"REJECT {name}: master URL host not in allowlist ({','.join(allowed_suffixes)})"
 
     with tempfile.TemporaryDirectory() as td:
@@ -78,14 +79,16 @@ def process(job_file: Path, out_dir: Path, sub_langs: str, allowed_suffixes) -> 
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         vtts = list(Path(td).glob("*.vtt"))
         if not vtts:
-            # expired token or CDN refusal — shelve so the queue drains; re-harvest to retry
-            job_file.rename(job_file.with_suffix(".failed"))
+            # expired token or CDN refusal -- shelve so the queue drains; re-harvest to retry
+            os.replace(job_file, job_file.with_suffix(".failed"))
             return f"FAIL {name}: rc={r.returncode} {r.stderr.strip()[:300]}"
         text = clean_vtt(vtts[0].read_text(encoding="utf-8"))
         if len(text) < 200:
-            job_file.rename(job_file.with_suffix(".failed"))
+            os.replace(job_file, job_file.with_suffix(".failed"))
             return f"FAIL {name}: transcript too short ({len(text)} chars)"
-        out_md.write_text(f"# {name}\n\n{text}\n", encoding="utf-8")
+        watch = data.get("url")
+        header = f"# {name}\n\n" + (f"Watch: {watch}\n\n" if watch else "")
+        out_md.write_text(header + text + "\n", encoding="utf-8")
         job_file.unlink()
         return f"saved {out_md.name} ({len(text)} chars)"
 
@@ -115,11 +118,20 @@ def main():
             continue
         idle = 0.0
         for job in jobs:
+            # atomic claim so multiple worker instances can share one queue
+            claimed = job.with_suffix(".working")
             try:
-                print(process(job, out_dir, args.sub_langs, allowed_suffixes), flush=True)
+                os.replace(job, claimed)
+            except OSError:
+                continue  # another worker got it
+            try:
+                print(process(claimed, out_dir, args.sub_langs, allowed_suffixes), flush=True)
             except Exception as e:  # noqa: BLE001 - keep the watcher alive
                 print(f"ERROR {job.name}: {e}", flush=True)
-                job.rename(job.with_suffix(".failed"))
+                try:
+                    os.replace(claimed, claimed.with_suffix(".failed"))
+                except OSError:
+                    pass
     print(f"idle {args.idle_exit}s, exiting")
 
 

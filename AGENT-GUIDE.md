@@ -47,8 +47,9 @@ Two lectures per browser batch is a good rhythm. Per lecture, five sequential ac
      master=res.find(u=>u.includes('master')&&u.includes('.m3u8'))||null;
      child=res.find(u=>u.includes('vod-akm')&&u.includes('.m3u8')&&!u.includes('master'))||null;
      if(master&&child) break; await new Promise(r=>setTimeout(r,500)); }
-   if(master){ fetch('http://127.0.0.1:8765/urls',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,body:JSON.stringify({name:'<NAME>', master, child})}).catch(()=>{}); await new Promise(r=>setTimeout(r,800)); 'FIRED' } else 'NOMASTER'
+   if(master){ fetch('http://127.0.0.1:8765/urls',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,body:JSON.stringify({name:'<NAME>', master, child, url:'<LECTURE-PAGE-URL>'})}).catch(()=>{}); await new Promise(r=>setTimeout(r,800)); 'FIRED' } else 'NOMASTER'
    ```
+   The optional `url` field (the academy lecture-page URL you navigated to in step 1) becomes a clickable "Watch:" link in the transcript header — always include it.
 
 **Pacing matters:** the master URL's `hdnts` token expires ~8 minutes after page load. The worker processes jobs in ~5–15s each, so at 2-lectures-per-batch it keeps up. If you harvest much faster than the worker drains, late jobs expire (yt-dlp 403) and get shelved as `queue/*.failed` — that's recoverable, see Phase 4.
 
